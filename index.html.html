@@ -1,0 +1,679 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Content Creator Hub</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Inter font -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6;
+        }
+        .tab-active {
+            @apply bg-gray-100 font-semibold;
+        }
+        .calendar-grid {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 1px;
+            background-color: #e5e7eb;
+        }
+        .calendar-day {
+            min-height: 100px;
+            background-color: white;
+            padding: 8px;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+        }
+        .day-label {
+            font-size: 0.875rem;
+            color: #9ca3af;
+        }
+        .day-content {
+            margin-top: 8px;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex items-center justify-center p-4 sm:p-6 md:p-8">
+    <div id="app" class="w-full max-w-4xl bg-white rounded-xl shadow-2xl overflow-hidden flex flex-col h-[90vh] relative">
+        <!-- Header & Navigation -->
+        <div class="p-4 sm:p-6 bg-gradient-to-r from-blue-500 to-indigo-600 text-white shadow-md rounded-t-xl flex items-center justify-between">
+            <div>
+                <h1 class="text-2xl sm:text-3xl font-bold">Content Creator Hub</h1>
+                <p id="user-id" class="text-sm font-light mt-1 opacity-90 truncate">Loading user...</p>
+            </div>
+            <button id="download-btn" class="p-2 sm:p-3 rounded-full bg-white text-blue-500 hover:text-blue-700 transition-colors duration-200 shadow-md">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+            </button>
+        </div>
+        <div class="flex border-b border-gray-200">
+            <button id="ideas-tab" class="tab-button py-3 px-6 text-sm font-medium border-r border-gray-200 text-gray-700 hover:bg-gray-100 transition-colors duration-200 focus:outline-none flex-1 tab-active">Ideas</button>
+            <button id="planning-tab" class="tab-button py-3 px-6 text-sm font-medium border-r border-gray-200 text-gray-700 hover:bg-gray-100 transition-colors duration-200 focus:outline-none flex-1">Planning</button>
+            <button id="calendar-tab" class="tab-button py-3 px-6 text-sm font-medium border-r border-gray-200 text-gray-700 hover:bg-gray-100 transition-colors duration-200 focus:outline-none flex-1">Calendar</button>
+            <button id="team-tab" class="tab-button py-3 px-6 text-sm font-medium text-gray-700 hover:bg-gray-100 transition-colors duration-200 focus:outline-none flex-1">Team</button>
+        </div>
+
+        <!-- Main Content Area -->
+        <div id="content-area" class="flex-grow p-4 sm:p-6 overflow-y-auto relative">
+            <!-- Dynamic content will be rendered here -->
+        </div>
+        
+        <!-- Loading overlay - now a sibling of content-area -->
+        <div id="loading-overlay" class="absolute inset-0 bg-white bg-opacity-80 flex items-center justify-center z-10 hidden">
+            <div class="text-center">
+                <div class="animate-spin rounded-full h-12 w-12 border-4 border-t-4 border-blue-500 border-opacity-25"></div>
+                <p class="mt-4 text-gray-600">Loading...</p>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Modal for errors and confirmations -->
+    <div id="modal-container" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+        <div class="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
+            <div class="mt-3 text-center">
+                <h3 class="text-lg leading-6 font-medium text-gray-900" id="modal-title"></h3>
+                <div class="mt-2 px-7 py-3">
+                    <p class="text-sm text-gray-500" id="modal-message"></p>
+                </div>
+                <div class="items-center px-4 py-3">
+                    <button id="modal-close-btn" class="px-4 py-2 bg-indigo-500 text-white text-base font-medium rounded-md w-full shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                        OK
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Firebase SDKs -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, serverTimestamp, setLogLevel, doc, setDoc, deleteDoc, updateDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Global variables for Firebase configuration and authentication token
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        // Set log level for debugging
+        setLogLevel('Debug');
+
+        // Initialize Firebase
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const auth = getAuth(app);
+        const googleProvider = new GoogleAuthProvider();
+
+        // UI elements
+        const contentArea = document.getElementById('content-area');
+        const loadingOverlay = document.getElementById('loading-overlay');
+        const userIdDisplay = document.getElementById('user-id');
+        const downloadBtn = document.getElementById('download-btn');
+        const tabs = {
+            ideas: document.getElementById('ideas-tab'),
+            planning: document.getElementById('planning-tab'),
+            calendar: document.getElementById('calendar-tab'),
+            team: document.getElementById('team-tab')
+        };
+        const modal = {
+            container: document.getElementById('modal-container'),
+            title: document.getElementById('modal-title'),
+            message: document.getElementById('modal-message'),
+            closeBtn: document.getElementById('modal-close-btn')
+        };
+
+        // State variables
+        let currentView = 'ideas';
+        let userId = '';
+        let currentCalendarDate = new Date();
+        let authStateReady = false;
+
+        // Function to show modal messages
+        const showModal = (title, message) => {
+            modal.title.textContent = title;
+            modal.message.innerHTML = message;
+            modal.container.classList.remove('hidden');
+        };
+
+        // Function to handle modal close
+        modal.closeBtn.addEventListener('click', () => {
+            modal.container.classList.add('hidden');
+        });
+
+        // Function to render the active tab
+        const updateTabStyles = () => {
+            Object.values(tabs).forEach(tab => {
+                tab.classList.remove('tab-active');
+            });
+            tabs[currentView].classList.add('tab-active');
+            if (authStateReady) {
+                renderContent();
+            }
+        };
+
+        // --- Core Rendering Functions ---
+        const renderIdeas = (ideas) => {
+            const authSection = `
+                <div id="auth-section" class="mb-6 p-4 bg-white rounded-lg shadow-sm border border-gray-200 text-center">
+                    <p class="text-gray-600 mb-2">Want to save your ideas to your Google account?</p>
+                    <button id="google-login-btn" class="w-full py-2 px-4 bg-blue-500 text-white font-semibold rounded-md hover:bg-blue-600 transition-colors duration-200 flex items-center justify-center space-x-2">
+                        <svg class="w-5 h-5" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="M12 9.375V12h3.53a4.053 4.053 0 0 1-1.788 2.653c-1.127.766-2.583 1.222-4.108 1.222-3.793 0-6.875-3.082-6.875-6.875s3.082-6.875 6.875-6.875c2.053 0 3.794.887 5.078 2.164L15.352 4.1C13.882 2.633 11.166 2 9.375 2A8.375 8.375 0 0 0 1 10.375c0 4.61 3.765 8.375 8.375 8.375 4.318 0 7.82-3.328 8.272-7.533H12V9.375z" fill="#F4B400"/><path d="M22.5 12h-2.5v2.5h2.5V12z" fill="#4285F4"/><path d="M19.125 15.375a7.375 7.375 0 0 1-1.396 3.656h0a6.875 6.875 0 0 1-5.079 2.169c-4.61 0-8.375-3.765-8.375-8.375s3.765-8.375 8.375-8.375c2.463 0 4.673 1.056 6.25 2.766L17.75 6.25c-1.22-1.353-2.905-2.188-4.625-2.188A6.375 6.375 0 0 0 6.75 10.375c0 3.52 2.855 6.375 6.375 6.375a6.36 6.36 0 0 0 4.582-1.996z" fill="#0F9D58"/><path d="M21.5 10.375v2.5h-2.5v-2.5h2.5z" fill="#DB4437"/></svg>
+                        <span>Sign in with Google</span>
+                    </button>
+                    <button id="sign-out-btn" class="w-full py-2 px-4 mt-2 bg-red-500 text-white font-semibold rounded-md hover:bg-red-600 transition-colors duration-200 hidden">Sign Out</button>
+                </div>
+            `;
+            contentArea.innerHTML = `
+                ${userId.length > 20 ? authSection : ''}
+                <div class="mb-6">
+                    <h2 class="text-xl font-bold text-gray-800 mb-4">Add a New Idea</h2>
+                    <form id="add-idea-form" class="flex flex-col space-y-3 p-4 bg-gray-50 rounded-lg shadow-inner">
+                        <input type="text" id="idea-title-input" placeholder="Idea title..." required class="p-3 rounded-md border border-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                        <textarea id="idea-description-input" placeholder="Description..." rows="3" class="p-3 rounded-md border border-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"></textarea>
+                        <button type="submit" class="w-full py-3 px-4 bg-indigo-600 text-white font-semibold rounded-md hover:bg-indigo-700 transition-colors duration-200">
+                            Add Idea
+                        </button>
+                    </form>
+                </div>
+                <div>
+                    <h2 class="text-xl font-bold text-gray-800 mb-4">All Ideas</h2>
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full bg-white rounded-lg shadow-sm">
+                            <thead class="bg-gray-100">
+                                <tr>
+                                    <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Title</th>
+                                    <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Description</th>
+                                    <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Added By</th>
+                                    <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="ideas-table-body" class="divide-y divide-gray-200">
+                                ${ideas.map(idea => `
+                                    <tr>
+                                        <td class="px-4 py-3 whitespace-nowrap">${idea.title}</td>
+                                        <td class="px-4 py-3">${idea.description}</td>
+                                        <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">${idea.creatorId === userId ? 'You' : idea.creatorId}</td>
+                                        <td class="px-4 py-3 whitespace-nowrap text-sm font-medium">
+                                            <div class="flex space-x-2">
+                                                <button class="delete-btn text-red-500 hover:text-red-700 transition-colors duration-200" data-id="${idea.id}">
+                                                    Delete
+                                                </button>
+                                                <button class="plan-btn text-green-500 hover:text-green-700 transition-colors duration-200" data-id="${idea.id}">
+                                                    Plan
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            `;
+
+            // Event listeners
+            if (document.getElementById('google-login-btn')) {
+                document.getElementById('google-login-btn').addEventListener('click', async () => {
+                    try {
+                        await signInWithPopup(auth, googleProvider);
+                    } catch (error) {
+                        console.error("Google login failed:", error);
+                        showModal("Login Error", "Failed to sign in with Google. Please try again.");
+                    }
+                });
+            }
+            if (document.getElementById('sign-out-btn')) {
+                document.getElementById('sign-out-btn').addEventListener('click', async () => {
+                    try {
+                        await signOut(auth);
+                    } catch (error) {
+                        console.error("Sign out failed:", error);
+                        showModal("Sign Out Error", "Failed to sign out. Please try again.");
+                    }
+                });
+            }
+            document.getElementById('add-idea-form').addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const title = document.getElementById('idea-title-input').value.trim();
+                const description = document.getElementById('idea-description-input').value.trim();
+                if (title) {
+                    try {
+                        await addDoc(collection(db, `/artifacts/${appId}/public/data/ideas`), {
+                            title,
+                            description,
+                            creatorId: userId,
+                            timestamp: serverTimestamp(),
+                            planning: { date: null, location: null, notes: null, priority: 'Low' }
+                        });
+                        e.target.reset();
+                    } catch (error) {
+                        console.error("Error adding document:", error);
+                        showModal("Error", "Could not add idea. Please try again.");
+                    }
+                }
+            });
+            document.querySelectorAll('.delete-btn').forEach(button => {
+                button.addEventListener('click', async (e) => {
+                    const docId = e.target.dataset.id;
+                    try {
+                        await deleteDoc(doc(db, `/artifacts/${appId}/public/data/ideas`, docId));
+                    } catch (error) {
+                        console.error("Error deleting document:", error);
+                        showModal("Error", "Could not delete idea. Please try again.");
+                    }
+                });
+            });
+            document.querySelectorAll('.plan-btn').forEach(button => {
+                button.addEventListener('click', () => {
+                    const docId = button.dataset.id;
+                    const idea = ideas.find(i => i.id === docId);
+                    if (idea) {
+                        showPlanningModal(idea);
+                    }
+                });
+            });
+        };
+
+        const showPlanningModal = (idea) => {
+            const modalContent = `
+                <h3 class="text-xl font-bold mb-4">Plan Idea: ${idea.title}</h3>
+                <form id="plan-form">
+                    <div class="mb-4">
+                        <label for="plan-date" class="block text-gray-700 font-semibold mb-1">Date</label>
+                        <input type="date" id="plan-date" required class="w-full p-2 border rounded-md" value="${idea.planning?.date || ''}">
+                    </div>
+                    <div class="mb-4">
+                        <label for="plan-location" class="block text-gray-700 font-semibold mb-1">Location</label>
+                        <input type="text" id="plan-location" required placeholder="e.g., Central Park, NYC" class="w-full p-2 border rounded-md" value="${idea.planning?.location || ''}">
+                    </div>
+                    <div class="mb-4">
+                        <label for="plan-notes" class="block text-gray-700 font-semibold mb-1">Notes/Script</label>
+                        <textarea id="plan-notes" placeholder="Write your script or notes here..." rows="6" class="w-full p-2 border rounded-md">${idea.planning?.notes || ''}</textarea>
+                    </div>
+                    <div class="mb-4">
+                        <label for="plan-priority" class="block text-gray-700 font-semibold mb-1">Priority</label>
+                        <select id="plan-priority" class="w-full p-2 border rounded-md">
+                            <option value="Low">Low</option>
+                            <option value="Medium">Medium</option>
+                            <option value="High">High</option>
+                        </select>
+                    </div>
+                    <button type="submit" class="w-full py-2 px-4 bg-indigo-600 text-white rounded-md hover:bg-indigo-700">Confirm Plan</button>
+                </form>
+            `;
+            modal.title.innerHTML = 'Plan Idea';
+            modal.message.innerHTML = modalContent;
+            modal.container.classList.remove('hidden');
+
+            // Set priority default value
+            document.getElementById('plan-priority').value = idea.planning?.priority || 'Low';
+
+            document.getElementById('plan-form').addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const date = document.getElementById('plan-date').value;
+                const location = document.getElementById('plan-location').value;
+                const notes = document.getElementById('plan-notes').value;
+                const priority = document.getElementById('plan-priority').value;
+                try {
+                    await updateDoc(doc(db, `/artifacts/${appId}/public/data/ideas`, idea.id), {
+                        planning: { date, location, notes, priority }
+                    });
+                    modal.container.classList.add('hidden');
+                } catch (error) {
+                    console.error("Error planning idea:", error);
+                    showModal("Error", "Could not plan idea. Please try again.");
+                }
+            });
+        };
+
+        const renderPlanning = (ideas) => {
+            const unplannedIdeas = ideas.filter(idea => !idea.planning?.date);
+            const plannedIdeas = ideas.filter(idea => idea.planning?.date).sort((a,b) => new Date(a.planning.date) - new Date(b.planning.date));
+
+            contentArea.innerHTML = `
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <!-- Unplanned Ideas Column -->
+                    <div class="bg-gray-50 p-4 rounded-lg shadow-inner">
+                        <h2 class="text-xl font-bold text-gray-800 mb-4">Unplanned Ideas (${unplannedIdeas.length})</h2>
+                        <div id="unplanned-ideas-list" class="space-y-4">
+                            ${unplannedIdeas.length > 0 ? unplannedIdeas.map(idea => `
+                                <div class="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
+                                    <h3 class="font-bold text-gray-800">${idea.title}</h3>
+                                    <p class="text-sm text-gray-600 mt-1">${idea.description}</p>
+                                    <div class="mt-4 flex justify-end">
+                                        <button class="plan-btn py-2 px-3 text-sm rounded-md bg-green-100 text-green-700 hover:bg-green-200" data-id="${idea.id}">
+                                            Plan
+                                        </button>
+                                    </div>
+                                </div>
+                            `).join('') : '<p class="text-gray-500 text-center py-4">No unplanned ideas.</p>'}
+                        </div>
+                    </div>
+                    <!-- Planned Ideas Column -->
+                    <div class="bg-white p-4 rounded-lg shadow-lg">
+                        <h2 class="text-xl font-bold text-gray-800 mb-4">Planned Ideas (${plannedIdeas.length})</h2>
+                        <div id="planned-ideas-list" class="space-y-4">
+                            ${plannedIdeas.length > 0 ? plannedIdeas.map(idea => `
+                                <div class="bg-indigo-50 p-4 rounded-lg border-l-4 border-indigo-500 shadow-sm">
+                                    <h3 class="font-bold text-indigo-800">${idea.title}</h3>
+                                    <p class="text-sm text-indigo-600 mt-1">${idea.description}</p>
+                                    <div class="text-sm text-indigo-700 mt-2 font-semibold">
+                                        <p>Date: ${idea.planning.date}</p>
+                                        <p>Location: ${idea.planning.location}</p>
+                                        <p>Priority: ${idea.planning.priority || 'Low'}</p>
+                                    </div>
+                                    ${idea.planning.notes ? `<p class="text-xs text-gray-500 italic mt-2">${idea.planning.notes.substring(0, 50)}...</p>` : ''}
+                                    <div class="flex items-center justify-between text-xs text-indigo-400 mt-2 pt-2 border-t border-indigo-200">
+                                        <span>Planned by: ${idea.creatorId === userId ? 'You' : idea.creatorId}</span>
+                                        <div class="flex space-x-2">
+                                            <button class="edit-plan-btn text-indigo-500 hover:text-indigo-700" data-id="${idea.id}">
+                                                Edit
+                                            </button>
+                                            <button class="unplan-btn text-red-500 hover:text-red-700" data-id="${idea.id}">
+                                                Unplan
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            `).join('') : '<p class="text-gray-500 text-center py-4">No ideas have been planned yet.</p>'}
+                        </div>
+                    </div>
+                </div>
+            `;
+            // Add event listeners for the planning buttons
+            document.querySelectorAll('.plan-btn').forEach(button => {
+                button.addEventListener('click', () => {
+                    const docId = button.dataset.id;
+                    const idea = ideas.find(i => i.id === docId);
+                    if (idea) {
+                        showPlanningModal(idea);
+                    }
+                });
+            });
+            document.querySelectorAll('.edit-plan-btn').forEach(button => {
+                button.addEventListener('click', () => {
+                    const docId = button.dataset.id;
+                    const idea = ideas.find(i => i.id === docId);
+                    if (idea) {
+                        showPlanningModal(idea);
+                    }
+                });
+            });
+            document.querySelectorAll('.unplan-btn').forEach(button => {
+                button.addEventListener('click', async (e) => {
+                    const docId = e.target.dataset.id;
+                    try {
+                        await updateDoc(doc(db, `/artifacts/${appId}/public/data/ideas`, docId), {
+                            planning: { date: null, location: null, notes: null, priority: 'Low' }
+                        });
+                    } catch (error) {
+                        console.error("Error unplanning document:", error);
+                        showModal("Error", "Could not unplan idea. Please try again.");
+                    }
+                });
+            });
+        };
+
+        const renderCalendar = (ideas) => {
+            const plannedIdeas = ideas.filter(idea => idea.planning?.date);
+            const today = new Date();
+            const upcomingTasks = plannedIdeas.filter(idea => {
+                const ideaDate = new Date(idea.planning.date);
+                return ideaDate >= today;
+            }).sort((a, b) => new Date(a.planning.date) - new Date(b.planning.date));
+            
+            const getPriorityClass = (priority) => {
+                if (!priority) return 'bg-gray-200 text-gray-800';
+                switch(priority) {
+                    case 'Low': return 'bg-green-200 text-green-800';
+                    case 'Medium': return 'bg-yellow-200 text-yellow-800';
+                    case 'High': return 'bg-red-200 text-red-800';
+                    default: return 'bg-gray-200 text-gray-800';
+                }
+            };
+
+            const year = currentCalendarDate.getFullYear();
+            const month = currentCalendarDate.getMonth();
+            const firstDay = new Date(year, month, 1);
+            const lastDay = new Date(year, month + 1, 0);
+            const daysInMonth = lastDay.getDate();
+
+            const weekdays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+            let dayCells = '';
+
+            // Add leading empty cells
+            for (let i = 0; i < firstDay.getDay(); i++) {
+                dayCells += `<div class="calendar-day bg-gray-100"></div>`;
+            }
+
+            // Add day cells
+            for (let i = 1; i <= daysInMonth; i++) {
+                const day = new Date(year, month, i);
+                const ideasForDay = plannedIdeas.filter(idea => {
+                    const ideaDate = new Date(idea.planning.date);
+                    return ideaDate.getFullYear() === year && ideaDate.getMonth() === month && ideaDate.getDate() === i;
+                });
+                dayCells += `
+                    <div class="calendar-day border border-gray-200">
+                        <span class="day-label font-bold">${i}</span>
+                        <div class="day-content">
+                            ${ideasForDay.map(idea => `
+                                <div class="text-xs font-semibold px-2 py-1 rounded-full truncate ${getPriorityClass(idea.planning.priority)}">
+                                    ${idea.title}
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                `;
+            }
+
+            contentArea.innerHTML = `
+                <div class="mb-6 flex justify-between items-center">
+                    <button id="prev-month-btn" class="p-2 rounded-md bg-gray-200 hover:bg-gray-300">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+                    </button>
+                    <h2 class="text-xl font-bold text-gray-800">${currentCalendarDate.toLocaleString('default', { month: 'long', year: 'numeric' })}</h2>
+                    <button id="next-month-btn" class="p-2 rounded-md bg-gray-200 hover:bg-gray-300">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+                    </button>
+                </div>
+                <div class="calendar-grid">
+                    ${weekdays.map(day => `<div class="p-2 text-center text-xs font-semibold text-gray-500">${day}</div>`).join('')}
+                    ${dayCells}
+                </div>
+                <div class="mt-8">
+                    <h2 class="text-xl font-bold text-gray-800 mb-4">Upcoming Tasks</h2>
+                    <div class="space-y-4">
+                        ${upcomingTasks.length > 0 ? upcomingTasks.map(idea => `
+                            <div class="p-4 rounded-lg border-l-4 shadow-sm flex items-center justify-between
+                                ${idea.planning.priority === 'High' ? 'border-red-500 bg-red-50' :
+                                idea.planning.priority === 'Medium' ? 'border-yellow-500 bg-yellow-50' :
+                                'border-green-500 bg-green-50'}">
+                                <div>
+                                    <h3 class="font-bold">${idea.title}</h3>
+                                    <p class="text-sm text-gray-600">${idea.planning.date} - ${idea.planning.location}</p>
+                                </div>
+                                <span class="text-sm font-semibold">${idea.planning.priority || 'Low'} Priority</span>
+                            </div>
+                        `).join('') : '<p class="text-gray-500 text-center">No upcoming tasks.</p>'}
+                    </div>
+                </div>
+            `;
+
+            document.getElementById('prev-month-btn').addEventListener('click', () => {
+                currentCalendarDate.setMonth(currentCalendarDate.getMonth() - 1);
+                renderContent();
+            });
+            document.getElementById('next-month-btn').addEventListener('click', () => {
+                currentCalendarDate.setMonth(currentCalendarDate.getMonth() + 1);
+                renderContent();
+            });
+        };
+
+        const renderTeam = (users) => {
+            contentArea.innerHTML = `
+                <div class="mb-6">
+                    <h2 class="text-xl font-bold text-gray-800 mb-4">Active Team Members</h2>
+                    <ul class="space-y-2">
+                        ${users.map(user => `
+                            <li class="p-3 bg-gray-100 rounded-lg shadow-sm flex items-center space-x-3">
+                                <svg class="w-6 h-6 text-indigo-600" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd"></path></svg>
+                                <div>
+                                    <p class="font-semibold text-gray-800">${user.id === userId ? 'You (active)' : user.id}</p>
+                                    <span class="text-xs text-gray-500">Last seen: ${user.lastSeen && user.lastSeen.toDate ? user.lastSeen.toDate().toLocaleString() : '...'}</span>
+                                </div>
+                            </li>
+                        `).join('')}
+                    </ul>
+                </div>
+                <div class="mt-8 p-4 bg-yellow-50 rounded-lg border-l-4 border-yellow-500 text-yellow-800">
+                    <p class="font-semibold">How to invite a teammate:</p>
+                    <p class="mt-1 text-sm">Simply share the URL of this page with your team. They will be automatically signed in and appear here.</p>
+                </div>
+            `;
+        };
+        
+        const renderContent = () => {
+            loadingOverlay.classList.remove('hidden');
+            if (currentView === 'ideas') {
+                onSnapshot(query(collection(db, `/artifacts/${appId}/public/data/ideas`), orderBy("timestamp", "desc")), (snapshot) => {
+                    const ideas = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    renderIdeas(ideas);
+                    loadingOverlay.classList.add('hidden');
+                }, (error) => {
+                    console.error("Error fetching ideas:", error);
+                    showModal("Error", "Could not load ideas. Please check your connection.");
+                    loadingOverlay.classList.add('hidden');
+                });
+            } else if (currentView === 'planning') {
+                onSnapshot(query(collection(db, `/artifacts/${appId}/public/data/ideas`), orderBy("timestamp", "desc")), (snapshot) => {
+                    const ideas = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    renderPlanning(ideas);
+                    loadingOverlay.classList.add('hidden');
+                }, (error) => {
+                    console.error("Error fetching ideas for planning:", error);
+                    showModal("Error", "Could not load planning data. Please check your connection.");
+                    loadingOverlay.classList.add('hidden');
+                });
+            } else if (currentView === 'calendar') {
+                onSnapshot(query(collection(db, `/artifacts/${appId}/public/data/ideas`), orderBy("timestamp", "desc")), (snapshot) => {
+                    const ideas = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    renderCalendar(ideas);
+                    loadingOverlay.classList.add('hidden');
+                }, (error) => {
+                    console.error("Error fetching ideas for calendar:", error);
+                    showModal("Error", "Could not load calendar data. Please check your connection.");
+                    loadingOverlay.classList.add('hidden');
+                });
+            } else if (currentView === 'team') {
+                onSnapshot(collection(db, `/artifacts/${appId}/public/data/active_users`), (snapshot) => {
+                    const now = new Date();
+                    const users = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    const recentUsers = users.filter(user => user.lastSeen && user.lastSeen.toDate() && (now.getTime() - user.lastSeen.toDate().getTime() < 300000));
+                    renderTeam(recentUsers);
+                    loadingOverlay.classList.add('hidden');
+                }, (error) => {
+                    console.error("Error fetching users:", error);
+                    showModal("Error", "Could not load team data. Please check your connection.");
+                    loadingOverlay.classList.add('hidden');
+                });
+            }
+        };
+
+        // --- Application Setup ---
+        const setupApp = () => {
+            onAuthStateChanged(auth, async (user) => {
+                if (user) {
+                    // User is signed in.
+                    userId = user.uid;
+                    const userName = user.email || user.displayName || user.uid;
+                    userIdDisplay.innerHTML = `Signed in as: <span class="font-normal">${userName}</span>`;
+
+                    // Hide Google login and show sign out
+                    const googleLoginBtn = document.getElementById('google-login-btn');
+                    if(googleLoginBtn) googleLoginBtn.classList.add('hidden');
+                    const signOutBtn = document.getElementById('sign-out-btn');
+                    if(signOutBtn) signOutBtn.classList.remove('hidden');
+
+                    // Update 'last seen' timestamp
+                    const userRef = doc(db, `/artifacts/${appId}/public/data/active_users`, userId);
+                    await setDoc(userRef, { lastSeen: serverTimestamp() });
+                } else {
+                    // User is signed out.
+                    const googleLoginBtn = document.getElementById('google-login-btn');
+                    if(googleLoginBtn) googleLoginBtn.classList.remove('hidden');
+                    const signOutBtn = document.getElementById('sign-out-btn');
+                    if(signOutBtn) signOutBtn.classList.add('hidden');
+
+                    if (initialAuthToken) {
+                        // Use the provided custom token for initial login
+                        try {
+                            await signInWithCustomToken(auth, initialAuthToken);
+                        } catch (error) {
+                            console.error("Custom token login failed:", error);
+                            showModal("Authentication Error", "The initial login token failed. Please refresh the page to try again.");
+                        }
+                    } else {
+                        // Fallback to anonymous sign-in
+                        try {
+                             await signInAnonymously(auth);
+                        } catch (error) {
+                            console.error("Anonymous login failed:", error);
+                            showModal("Authentication Error", "Anonymous login failed. Please refresh the page.");
+                        }
+                    }
+                }
+                authStateReady = true;
+                updateTabStyles();
+            });
+        };
+
+        // Download functionality
+        const downloadFile = () => {
+            const htmlContent = document.documentElement.outerHTML;
+            const blob = new Blob([htmlContent], { type: 'text/html' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'content_creator_hub.html';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        };
+
+        // Tab click event listeners
+        tabs.ideas.addEventListener('click', () => { currentView = 'ideas'; updateTabStyles(); });
+        tabs.planning.addEventListener('click', () => { currentView = 'planning'; updateTabStyles(); });
+        tabs.calendar.addEventListener('click', () => { currentView = 'calendar'; updateTabStyles(); });
+        tabs.team.addEventListener('click', () => { currentView = 'team'; updateTabStyles(); });
+
+        // Download button listener
+        downloadBtn.addEventListener('click', downloadFile);
+
+        // Start the application setup after the DOM has fully loaded
+        document.addEventListener('DOMContentLoaded', setupApp);
+
+        // Update 'last seen' timestamp every 30 seconds for active users
+        setInterval(async () => {
+            if (auth.currentUser) {
+                const userRef = doc(db, `/artifacts/${appId}/public/data/active_users`, auth.currentUser.uid);
+                await setDoc(userRef, { lastSeen: serverTimestamp() });
+            }
+        }, 30000);
+    </script>
+</body>
+</html>
